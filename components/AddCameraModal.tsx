@@ -23,13 +23,16 @@ export const AddCameraModal: React.FC<AddCameraModalProps> = ({ isOpen, onClose,
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
+    // Omit fields that are set by the backend (id, status, videoUrl, analyticIds)
     const cameraData: Omit<Camera, 'id' | 'status' | 'videoUrl' | 'analyticIds'> = { name, location, ipAddress };
     
     try {
       if (cameraToEdit) {
-        await onSave({ ...cameraToEdit, ...cameraData });
+        // When editing, we include the existing ID
+        await onSave({ ...cameraToEdit, ...cameraData } as Camera);
       } else {
-        await onSave(cameraData as Omit<Camera, 'id'>);
+        // When adding, we only pass the data for the new camera
+        await onSave(cameraData);
       }
       onClose();
     } catch(error) {

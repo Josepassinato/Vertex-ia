@@ -1,10 +1,13 @@
 
 import React from 'react';
 import type { Page } from '../types';
+import type { User } from 'firebase/auth'; // Import User type directly from firebase/auth
 
 interface HeaderProps {
     currentPage: Page;
     setSidebarOpen: (isOpen: boolean) => void;
+    onLogout: () => void; // Add logout prop
+    currentUser: User | null; // Use Firebase's User type
 }
 
 const MenuIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -14,7 +17,7 @@ const MenuIcon: React.FC<{className?: string}> = ({ className }) => (
 );
 
 
-export const Header: React.FC<HeaderProps> = ({ currentPage, setSidebarOpen }) => {
+export const Header: React.FC<HeaderProps> = ({ currentPage, setSidebarOpen, onLogout, currentUser }) => {
     return (
         <header className="bg-gray-800 shadow-md">
             <div className="mx-auto px-4 sm:px-6 lg:px-8">
@@ -28,6 +31,19 @@ export const Header: React.FC<HeaderProps> = ({ currentPage, setSidebarOpen }) =
                             <MenuIcon className="h-6 w-6" />
                         </button>
                         <h1 className="text-2xl font-semibold text-white">{currentPage}</h1>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                        {currentUser && (
+                            <span className="text-sm text-gray-300 hidden sm:block">
+                                {currentUser.email}
+                            </span>
+                        )}
+                        <button
+                            onClick={onLogout}
+                            className="bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-1.5 px-3 rounded-md transition-colors"
+                        >
+                            Logout
+                        </button>
                     </div>
                 </div>
             </div>

@@ -1,6 +1,7 @@
 
 import React from 'react';
-import type { Analytic } from './types';
+// No longer importing Analytic type here to avoid circular dependency
+// with types.ts which will now have iconName string.
 
 // Icons
 export const DashboardIcon: React.FC<{className?: string}> = ({ className }) => (
@@ -46,11 +47,16 @@ export const AnomalyDetectionIcon: React.FC<{className?: string}> = ({ className
     </svg>
 );
 
+export const DefaultAnalyticIcon: React.FC<{className?: string}> = ({ className }) => (
+    <svg className={className} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10m-4 0h16.707a1 1 0 00.707-.293l3.293-3.293c.39-.39.39-1.023 0-1.414l-3.293-3.293a1 1 0 00-.707-.293H4z" /></svg>
+);
 
-// Mocks
-export const MOCK_ANALYTICS: Analytic[] = [
-    { id: 1, name: 'Facial Recognition', description: 'Identify and verify individuals from a digital image or a video frame. Tracks authorized personnel and flags unknown individuals.', version: '2.1.0', icon: FaceRecognitionIcon, tags: ['Security', 'Identity', 'Biometrics'] },
-    { id: 2, name: 'License Plate Recognition (LPR)', description: 'Automatically read vehicle license plates. Useful for parking management, toll collection, and tracking vehicle entry/exit.', version: '1.8.3', icon: LPROIcon, tags: ['Vehicles', 'Access Control', 'Automation'] },
-    { id: 3, name: 'Object Detection & Tracking', description: 'Detect and track specific objects within the camera\'s view, such as bags, equipment, or animals.', version: '3.0.1', icon: ObjectDetectionIcon, tags: ['Assets', 'Safety', 'Inventory'] },
-    { id: 4, name: 'Behavioral Anomaly Detection', description: 'Learns normal patterns of activity and alerts on unusual behaviors like loitering, falls, or erratic movement.', version: '1.5.0', icon: AnomalyDetectionIcon, tags: ['Safety', 'AI', 'Proactive'] },
-];
+// Map of icon names to actual React components
+export const iconMap: { [key: string]: React.FC<{className?: string}> } = {
+  FaceRecognitionIcon: FaceRecognitionIcon,
+  LPROIcon: LPROIcon,
+  ObjectDetectionIcon: ObjectDetectionIcon,
+  AnomalyDetectionIcon: AnomalyDetectionIcon,
+  DefaultAnalyticIcon: DefaultAnalyticIcon,
+  // Add other icons here as needed
+};

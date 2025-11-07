@@ -1,9 +1,10 @@
+
 import React from 'react';
 
 interface ConfirmationModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<void>; // Changed to Promise<void>
   title: string;
   message: string;
 }

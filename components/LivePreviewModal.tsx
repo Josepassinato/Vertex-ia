@@ -45,12 +45,12 @@ export const LivePreviewModal: React.FC<LivePreviewModalProps> = ({ isOpen, onCl
                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 mb-2">
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            Video Not Available
+                            Video Stream Not Available
                             <span className="text-xs mt-1">(Check console for errors)</span>
                         </div>
                     ) : (
                         <video 
-                            src={camera.videoUrl} 
+                            src={camera.videoUrl} // Directly set src
                             className="w-full h-auto object-contain max-h-[70vh] rounded" 
                             autoPlay 
                             loop 
@@ -64,7 +64,7 @@ export const LivePreviewModal: React.FC<LivePreviewModalProps> = ({ isOpen, onCl
                                     `Error loading video in LivePreviewModal: ${camera.name}. ` +
                                     `Code: ${error?.code || 'N/A'}, ` +
                                     `Message: ${error?.message || 'N/A'}. ` +
-                                    `URL: ${e.currentTarget.src}` // Use e.currentTarget.src for accuracy
+                                    `URL: ${e.currentTarget.src}` 
                                 );
                             }}
                         >

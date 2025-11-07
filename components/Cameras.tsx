@@ -1,5 +1,6 @@
+
 import React from 'react';
-import type { Camera } from '../types';
+import type { Camera, Analytic } from '../types';
 import { CameraCard } from './CameraCard';
 
 interface CamerasProps {
@@ -8,9 +9,11 @@ interface CamerasProps {
     onEditCamera: (camera: Camera) => void;
     onDeleteCamera: (camera: Camera) => void;
     onShowPreview: (camera: Camera) => void;
+    onStartLiveAnalysis: (camera: Camera) => void;
+    analytics: Analytic[]; // New prop
 }
 
-export const Cameras: React.FC<CamerasProps> = ({ cameras, onAddCameraClick, onEditCamera, onDeleteCamera, onShowPreview }) => {
+export const Cameras: React.FC<CamerasProps> = ({ cameras, onAddCameraClick, onEditCamera, onDeleteCamera, onShowPreview, onStartLiveAnalysis, analytics }) => {
     return (
         <div>
             <div className="flex justify-between items-center mb-8">
@@ -34,8 +37,10 @@ export const Cameras: React.FC<CamerasProps> = ({ cameras, onAddCameraClick, onE
                         key={camera.id} 
                         camera={camera} 
                         onEdit={() => onEditCamera(camera)}
-                        onDelete={() => onDeleteCamera(camera)}
+                        onDelete={() => onDeleteCamera(camera)} {/* Fix: Removed extra curly braces */}
                         onShowPreview={() => onShowPreview(camera)}
+                        onStartLiveAnalysis={onStartLiveAnalysis}
+                        analytics={analytics} // Pass analytics to CameraCard
                     />
                 ))}
             </div>

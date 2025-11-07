@@ -1,13 +1,21 @@
 
 import React, { useState, useEffect } from 'react';
-import type { Camera } from '../types';
-import { MOCK_ANALYTICS } from '../constants';
+import type { Camera, Analytic } from '../types';
+import { 
+    FaceRecognitionIcon, 
+    LPROIcon, 
+    ObjectDetectionIcon, 
+    AnomalyDetectionIcon, 
+    DefaultAnalyticIcon // Import DefaultAnalyticIcon
+} from '../constants';
 
 interface CameraCardProps {
     camera: Camera;
     onEdit: () => void;
     onDelete: () => void;
     onShowPreview: () => void;
+    onStartLiveAnalysis: (camera: Camera) => void;
+    analytics: Analytic[]; // New prop
 }
 
 const EditIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
@@ -28,8 +36,14 @@ const PlayIcon: React.FC<{ className?: string }> = ({ className = 'w-8 h-8' }) =
     </svg>
 );
 
+const LiveAnalysisIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+        <path fillRule="evenodd" d="M4.848 9.247a.75.75 0 01.68-.133l4.962 1.401c.648.183 1.07.753 1.07 1.442v3.133a.75.75 0 01-1.096.697l-4.997-1.793a.75.75 0 01-.482-.704V9.38a.75.75 0 01.133-.68zM14.47 5.093a.75.75 0 01.68.133l4.962 1.401c.648.183 1.07.753 1.07 1.442v3.133a.75.75 0 01-1.096.697l-4.997-1.793a.75.75 0 01-.482-.704V5.226a.75.75 0 01.133-.68zM6.913 16.924a.75.75 0 01.68.133l4.962 1.401c.648.183 1.07.753 1.07 1.442v3.133a.75.75 0 01-1.096.697l-4.997-1.793a.75.75 0 01-.482-.704v-3.284a.75.75 0 01.133-.68z" clipRule="evenodd" />
+    </svg>
+);
 
-export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete, onShowPreview }) => {
+
+export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete, onShowPreview, onStartLiveAnalysis, analytics }) => {
     const [videoError, setVideoError] = useState(false);
 
     useEffect(() => {
@@ -42,7 +56,9 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete
         Offline: { dot: 'bg-gray-500', text: 'text-gray-400' },
     };
 
-    const appliedAnalytics = MOCK_ANALYTICS.filter(analytic => camera.analyticIds.includes(analytic.id));
+    const appliedAnalytics = analytics.filter(analytic => camera.analyticIds.includes(analytic.id));
+
+    const canStartLiveAnalysis = camera.status === 'Online' || camera.status === 'Recording';
 
     return (
         <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden transition-all duration-300 hover:shadow-2xl hover:border-blue-500 border-2 border-transparent">
@@ -50,7 +66,7 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete
                 {videoError ? (
                     <div className="w-full h-48 bg-gray-700 flex flex-col justify-center items-center text-gray-400 text-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-10 h-10 mb-2">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 o 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         Video Not Available
                         <span className="text-xs mt-1">(Check console for errors)</span>
@@ -58,20 +74,20 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete
                 ) : (
                     <video 
                         className="w-full h-48 object-cover" 
-                        src={camera.videoUrl} 
                         autoPlay 
                         loop 
                         muted 
                         playsInline
-                        key={camera.videoUrl} // Add key to force re-render on src change
+                        src={camera.videoUrl} // Directly set src
+                        key={camera.videoUrl} 
                         onError={(e) => {
-                            setVideoError(true); // Set error state to true
+                            setVideoError(true); 
                             const error = e.currentTarget.error;
                             console.error(
                                 `Error loading video in CameraCard: ${camera.name}. ` +
                                 `Code: ${error?.code || 'N/A'}, ` +
                                 `Message: ${error?.message || 'N/A'}. ` +
-                                `URL: ${e.currentTarget.src}` // Use e.currentTarget.src for accuracy
+                                `URL: ${e.currentTarget.src}` 
                             );
                         }}
                     >
@@ -121,7 +137,7 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete
                     <h4 className="text-xs font-semibold text-gray-500 uppercase mb-3">Active Analytics</h4>
                     <div className="flex flex-wrap gap-2 items-center min-h-[28px]">
                         {appliedAnalytics.length > 0 ? appliedAnalytics.map(analytic => {
-                            const Icon = analytic.icon;
+                            const Icon = analytic.icon; // Use the icon component directly from the analytic object
                             return (
                                 <div key={analytic.id} className="group relative" title={analytic.name}>
                                     <div className="bg-gray-700 p-1.5 rounded-full">
@@ -132,6 +148,17 @@ export const CameraCard: React.FC<CameraCardProps> = ({ camera, onEdit, onDelete
                         }) : <p className="text-xs text-gray-500 italic">No analytics applied.</p>}
                     </div>
                 </div>
+                {canStartLiveAnalysis && (
+                    <div className="mt-6 border-t border-gray-700 pt-5">
+                        <button 
+                            onClick={() => onStartLiveAnalysis(camera)}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center"
+                        >
+                            <LiveAnalysisIcon className="w-5 h-5 mr-2" />
+                            Iniciar Análise Ao Vivo
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import type { ApplyAnalyticsModalProps } from '../types';
 
 export const ApplyAnalyticsModal: React.FC<ApplyAnalyticsModalProps> = ({ isOpen, onClose, analytic, cameras, onSave }) => {
-  const [selectedCameraIds, setSelectedCameraIds] = useState<Set<number>>(new Set());
+  const [selectedCameraIds, setSelectedCameraIds] = useState<Set<string>>(new Set()); // Changed to string
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -15,7 +15,7 @@ export const ApplyAnalyticsModal: React.FC<ApplyAnalyticsModalProps> = ({ isOpen
     }
   }, [isOpen, analytic, cameras]);
 
-  const handleToggleCamera = (cameraId: number) => {
+  const handleToggleCamera = (cameraId: string) => { // Changed to string
     const newSelection = new Set(selectedCameraIds);
     if (newSelection.has(cameraId)) {
       newSelection.delete(cameraId);

@@ -1,5 +1,7 @@
 {
   "name": "Vertex Vision AI Platform",
   "description": "A comprehensive dashboard for managing and deploying computer vision analytics on IP camera streams, powered by Google's Vertex AI. This platform allows users to configure cameras, apply specialized AI models like facial recognition and license plate detection, and view generated reports and alerts.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

@@ -1,162 +1,338 @@
-import { Camera, ReportEvent, CameraStatus } from '../types';
-import { GoogleGenAI } from "@google/genai"; // Import GoogleGenAI
 
-// Royalty-free videos for simulation - New selection focused on "analytics test videos" and SD resolution for compatibility
-const VIDEO_FEEDS = [
-    // Cenários de Escritório/Pessoas (mais claros para reconhecimento/detecção)
-    'https://videos.pexels.com/video-files/3861849/3861849-sd_640_360_25fps.mp4', // 0: Lobby Entrance - Pessoas caminhando em corredor de escritório
-    'https://videos.pexels.com/video-files/2493540/2493540-sd_640_360_25fps.mp4', // 1: Server Room / Office - Pessoas trabalhando em computadores, movimentação sutil
-    'https://videos.pexels.com/video-files/6697479/6697479-sd_640_360_25fps.mp4', // 2: Cafeteria - Vista de cafeteria com pessoas sentadas e andando
-    
-    // Cenários de Estacionamento/Automóveis (mais claros para LPR/detecção de objetos)
-    'https://videos.pexels.com/video-files/4034293/4034293-sd_640_360_30fps.mp4', // 3: Parking Lot - Carros entrando e saindo de estacionamento
-    'https://videos.pexels.com/video-files/3860007/3860007-sd_640_360_25fps.mp4', // 4: Warehouse Dock / Street - Vista de rua com pessoas e veículos
-    
-    // Cenários Gerais de Segurança/Observação (SD para compatibilidade)
-    'https://videos.pexels.com/video-files/10255878/10255878-sd_640_360_25fps.mp4', // 5: Rooftop / City - Vista aérea de cidade com tráfego e pedestres
-    'https://videos.pexels.com/video-files/5837941/5837941-sd_640_360_24fps.mp4', // 6: General Office - Ambiente de escritório com pessoas caminhando
-    'https://videos.pexels.com/video-files/4207914/4207914-sd_640_360_30fps.mp4', // 7: Another parking/road scene - Mais carros em movimento
-];
+import type { Camera, Analytic, ReportEvent, CameraStatus, EventSeverity, VideoAnalysisResult } from '../types';
+// import { FirebaseContext } from '../index'; // Removed useContext and FirebaseContext import
+// import { useContext } from 'react'; // Removed useContext and FirebaseContext import
+import { 
+  collection, 
+  doc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot,
+  query,
+  orderBy,
+  getDocs,
+  where,
+  type Firestore // Added Firestore type import
+} from 'firebase/firestore';
+import { iconMap } from '../constants'; // Import the iconMap
 
-let MOCK_CAMERAS: Camera[] = [
-    { id: 1, name: 'Lobby Entrance', location: 'Main Building, 1st Floor', ipAddress: '192.168.1.101', status: 'Recording', videoUrl: VIDEO_FEEDS[0], analyticIds: [1, 4] },
-    { id: 2, name: 'Parking Lot P2', location: 'West Garage', ipAddress: '192.168.1.102', status: 'Online', videoUrl: VIDEO_FEEDS[3], analyticIds: [2] },
-    { id: 3, name: 'Warehouse Dock A', location: 'Logistics Center', ipAddress: '192.168.1.103', status: 'Offline', videoUrl: VIDEO_FEEDS[4], analyticIds: [] },
-    { id: 4, name: 'Server Room', location: 'Data Center, B-Wing', ipAddress: '192.168.1.104', status: 'Online', videoUrl: VIDEO_FEEDS[1], analyticIds: [1, 3, 4] },
-    { id: 5, name: 'Rooftop East', location: 'Main Building, Roof', ipAddress: '192.168.1.105', status: 'Online', videoUrl: VIDEO_FEEDS[5], analyticIds: [3] },
-    { id: 6, name: 'Cafeteria', location: 'Campus Center', ipAddress: '192.168.1.106', status: 'Offline', videoUrl: VIDEO_FEEDS[2], analyticIds: [4] },
-];
+// Placeholder for Cloud Functions base URL
+// IMPORTANT: Replace with your actual Firebase Cloud Functions HTTP endpoint URL
+const CLOUD_FUNCTION_BASE_URL = "https://us-central1-gen-lang-client-0912581918.cloudfunctions.net"; 
+// Example: https://us-central1-my-cool-project-12345.cloudfunctions.net
 
-const SEVERITIES = ['Low', 'Medium', 'High', 'Critical'] as const;
-const ANALYTICS = ['Facial Recognition', 'LPR', 'Object Detection', 'Anomaly Detection'];
+if (CLOUD_FUNCTION_BASE_URL.includes("YOUR_PROJECT_ID")) {
+  console.warn(
+    "ATENÇÃO: 'CLOUD_FUNCTION_BASE_URL' em services/api.ts ainda é um valor de placeholder. " +
+      "Por favor, atualize-o com a URL base real de suas Firebase Cloud Functions para que as funcionalidades de IA funcionem."
+  );
+}
 
-let MOCK_EVENTS: ReportEvent[] = Array.from({ length: 50 }, (_, i) => {
-    const camera = MOCK_CAMERAS[i % MOCK_CAMERAS.length];
-    const date = new Date();
-    date.setHours(date.getHours() - Math.floor(i / 2));
-    date.setMinutes(Math.floor(Math.random() * 60));
+interface FirestoreCamera extends Omit<Camera, 'analyticIds'> {
+  analyticIds: string[]; // Ensure this matches Firestore's representation
+}
 
-    return {
-        id: `evt-${i}`,
-        timestamp: date.toISOString(),
-        cameraName: camera.name,
-        analyticName: ANALYTICS[i % ANALYTICS.length],
-        severity: SEVERITIES[i % SEVERITIES.length],
-        videoUrl: VIDEO_FEEDS[i % VIDEO_FEEDS.length], // Use a video for the event clip
-        details: 'A brief, auto-generated summary of the event would appear here, detailing what was detected.'
-    };
-}).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+// Helper to map Firestore data to frontend types
+const mapDocToCamera = (doc: any): Camera => ({
+  id: doc.id,
+  name: doc.data().name,
+  location: doc.data().location,
+  ipAddress: doc.data().ipAddress,
+  status: doc.data().status || 'Offline', // Default status if not set
+  videoUrl: doc.data().videoUrl || '/videos/default.mp4', // Default video URL
+  analyticIds: doc.data().analyticIds || [],
+});
 
-
-// Simulate API latency
-const apiDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-export const getCameras = async (): Promise<Camera[]> => {
-    await apiDelay(500);
-    return [...MOCK_CAMERAS];
+const mapDocToAnalytic = (doc: any): Analytic => {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    name: data.name,
+    description: data.description,
+    version: data.version,
+    iconName: data.iconName,
+    icon: iconMap[data.iconName] || iconMap.DefaultAnalyticIcon, // Map string name to React component
+    tags: data.tags || [],
+  };
 };
 
-export const getEvents = async (): Promise<ReportEvent[]> => {
-    await apiDelay(700);
-    return [...MOCK_EVENTS];
+const mapDocToEvent = (doc: any): ReportEvent => ({
+  id: doc.id,
+  timestamp: doc.data().timestamp,
+  cameraName: doc.data().cameraName,
+  analyticName: doc.data().analyticName,
+  severity: doc.data().severity,
+  videoUrl: doc.data().videoUrl,
+  details: doc.data().details,
+});
+
+// --- Firestore Data Listeners (Real-time) ---
+
+export const onCamerasSnapshot = (
+  db: Firestore, // Accept db as argument
+  onData: (cameras: Camera[]) => void, 
+  onError: (error: Error) => void
+) => {
+  const q = query(collection(db, "cameras"), orderBy("name"));
+  return onSnapshot(q, (snapshot) => {
+    const cameras = snapshot.docs.map(mapDocToCamera);
+    onData(cameras);
+  }, onError);
 };
 
-export const saveCamera = async (cameraData: Omit<Camera, 'id'> | Camera): Promise<Camera> => {
-    await apiDelay(1000);
-    if ('id' in cameraData) {
-        // Update existing camera
-        const index = MOCK_CAMERAS.findIndex(c => c.id === cameraData.id);
-        if (index > -1) {
-            MOCK_CAMERAS[index] = { ...MOCK_CAMERAS[index], ...cameraData };
-            return MOCK_CAMERAS[index];
-        } else {
-            throw new Error("Camera not found");
+export const onAnalyticsSnapshot = (
+  db: Firestore, // Accept db as argument
+  onData: (analytics: Analytic[]) => void, 
+  onError: (error: Error) => void
+) => {
+  const q = query(collection(db, "analytics"), orderBy("name"));
+  return onSnapshot(q, (snapshot) => {
+    const analytics = snapshot.docs.map(mapDocToAnalytic);
+    onData(analytics);
+  }, onError);
+};
+
+export const onEventsSnapshot = (
+  db: Firestore, // Accept db as argument
+  onData: (events: ReportEvent[]) => void, 
+  onError: (error: Error) => void
+) => {
+  const q = query(collection(db, "events"), orderBy("timestamp", "desc"));
+  return onSnapshot(q, (snapshot) => {
+    const events = snapshot.docs.map(mapDocToEvent);
+    onData(events);
+  }, onError);
+};
+
+
+// --- CRUD Operations ---
+
+export const fetchCameras = async (db: Firestore): Promise<Camera[]> => { // Accept db as argument
+  const querySnapshot = await getDocs(collection(db, "cameras"));
+  return querySnapshot.docs.map(mapDocToCamera);
+};
+
+export const addCamera = async (
+  db: Firestore, // Accept db as argument
+  camera: Omit<Camera, 'id' | 'status' | 'videoUrl' | 'analyticIds'>
+): Promise<Camera> => {
+  const newCameraData = {
+    ...camera,
+    status: 'Offline', // Default status for new camera
+    videoUrl: '/videos/default.mp4', // Default video for new camera
+    analyticIds: [], // No analytics applied by default
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  const docRef = await addDoc(collection(db, "cameras"), newCameraData);
+  return { id: docRef.id, ...newCameraData } as Camera;
+};
+
+export const updateCamera = async (
+  db: Firestore, // Accept db as argument
+  updatedCamera: Camera
+): Promise<Camera> => {
+  const cameraRef = doc(db, "cameras", updatedCamera.id);
+  const dataToUpdate = {
+    name: updatedCamera.name,
+    location: updatedCamera.location,
+    ipAddress: updatedCamera.ipAddress,
+    status: updatedCamera.status,
+    videoUrl: updatedCamera.videoUrl,
+    analyticIds: updatedCamera.analyticIds,
+    updatedAt: new Date().toISOString(),
+  };
+  await updateDoc(cameraRef, dataToUpdate);
+  return updatedCamera;
+};
+
+export const deleteCamera = async (
+  db: Firestore, // Accept db as argument
+  id: string
+): Promise<void> => {
+  await deleteDoc(doc(db, "cameras", id));
+};
+
+export const fetchAnalytics = async (db: Firestore): Promise<Analytic[]> => { // Accept db as argument
+  const querySnapshot = await getDocs(collection(db, "analytics"));
+  return querySnapshot.docs.map(mapDocToAnalytic);
+};
+
+export const applyAnalyticsToCamera = async (
+  db: Firestore, // Accept db as argument
+  analyticId: string, 
+  cameraIds: string[]
+): Promise<void> => {
+  // First, get all cameras that currently have this analytic
+  const currentCamerasWithAnalyticQuery = query(collection(db, "cameras"), where("analyticIds", "array-contains", analyticId));
+  const currentCamerasSnapshot = await getDocs(currentCamerasWithAnalyticQuery);
+  const currentCamerasWithAnalytic = currentCamerasSnapshot.docs.map(doc => doc.id);
+
+  // Determine cameras to add the analytic to
+  const camerasToAddAnalytic = cameraIds.filter(id => !currentCamerasWithAnalytic.includes(id));
+  // Determine cameras to remove the analytic from
+  const camerasToRemoveAnalytic = currentCamerasWithAnalytic.filter(id => !cameraIds.includes(id));
+
+  // Update cameras to add the analytic
+  for (const cameraId of camerasToAddAnalytic) {
+    const cameraRef = doc(db, "cameras", cameraId);
+    const cameraDoc = await getDocs(query(collection(db, "cameras"), where("id", "==", cameraId)));
+    if (!cameraDoc.empty) {
+        const currentAnalyticIds = cameraDoc.docs[0].data().analyticIds || [];
+        if (!currentAnalyticIds.includes(analyticId)) {
+            await updateDoc(cameraRef, { 
+                analyticIds: [...currentAnalyticIds, analyticId],
+                updatedAt: new Date().toISOString(),
+            });
         }
-    } else {
-        // Add new camera
-        const newCamera: Camera = {
-            id: Math.max(...MOCK_CAMERAS.map(c => c.id), 0) + 1,
-            status: 'Online' as CameraStatus, // Default status
-            videoUrl: VIDEO_FEEDS[Math.floor(Math.random() * VIDEO_FEEDS.length)], // Assign a default video
-            analyticIds: [],
-            ...cameraData
-        };
-        MOCK_CAMERAS.push(newCamera);
-        return newCamera;
     }
-};
+  }
 
-export const deleteCamera = async (cameraId: number): Promise<void> => {
-    await apiDelay(800);
-    const index = MOCK_CAMERAS.findIndex(c => c.id === cameraId);
-    if (index > -1) {
-        MOCK_CAMERAS.splice(index, 1);
-    } else {
-        throw new Error("Camera not found");
-    }
-};
-
-export const updateAnalyticsOnCameras = async (analyticId: number, cameraIds: number[]): Promise<void> => {
-    await apiDelay(1200);
-    MOCK_CAMERAS.forEach(camera => {
-        const hasAnalytic = camera.analyticIds.includes(analyticId);
-        const shouldHaveAnalytic = cameraIds.includes(camera.id);
-
-        if (hasAnalytic && !shouldHaveAnalytic) {
-            // Remove it
-            camera.analyticIds = camera.analyticIds.filter(id => id !== analyticId);
-        } else if (!hasAnalytic && shouldHaveAnalytic) {
-            // Add it
-            camera.analyticIds.push(analyticId);
-        }
-    });
-};
-
-export const startStatusSimulation = (updateCallback: (cameras: Camera[]) => void): (() => void) => {
-    const intervalId = setInterval(() => {
-        if (MOCK_CAMERAS.length === 0) return;
-
-        const cameraIndex = Math.floor(Math.random() * MOCK_CAMERAS.length);
-        const cameraToUpdate = MOCK_CAMERAS[cameraIndex];
-
-        const statuses: CameraStatus[] = ['Online', 'Offline', 'Recording'];
-        const possibleNewStatuses = statuses.filter(s => s !== cameraToUpdate.status);
-        const newStatus = possibleNewStatuses[Math.floor(Math.random() * possibleNewStatuses.length)];
-        
-        cameraToUpdate.status = newStatus;
-        
-        // Notify the frontend of the change
-        updateCallback([...MOCK_CAMERAS]);
-
-    }, 4000); // Update every 4 seconds
-
-    return () => clearInterval(intervalId);
-};
-
-// New function for video frame analysis using GoogleGenAI
-export const analyzeVideoFrame = async (base64ImageData: string, framePrompt: string = 'Describe the objects and activities in this image.'): Promise<string> => {
-    // IMPORTANT: Create a new GoogleGenAI instance right before making an API call
-    // to ensure it always uses the most up-to-date API key from the dialog.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash-image', // Model for image analysis
-            contents: {
-                parts: [
-                    { text: framePrompt },
-                    {
-                        inlineData: {
-                            mimeType: 'image/jpeg', // Assuming JPEG frames
-                            data: base64ImageData,
-                        },
-                    },
-                ],
-            },
+  // Update cameras to remove the analytic
+  for (const cameraId of camerasToRemoveAnalytic) {
+    const cameraRef = doc(db, "cameras", cameraId);
+    const cameraDoc = await getDocs(query(collection(db, "cameras"), where("id", "==", cameraId)));
+    if (!cameraDoc.empty) {
+        const currentAnalyticIds = cameraDoc.docs[0].data().analyticIds || [];
+        await updateDoc(cameraRef, { 
+            analyticIds: currentAnalyticIds.filter((id: string) => id !== analyticId),
+            updatedAt: new Date().toISOString(),
         });
-        return response.text;
-    } catch (error) {
-        console.error("Error calling Gemini API for video frame analysis:", error);
-        throw new Error("Failed to analyze video frame with Gemini API. Check console for details.");
     }
+  }
+};
+
+
+export const fetchEvents = async (db: Firestore): Promise<ReportEvent[]> => { // Accept db as argument
+  const querySnapshot = await getDocs(query(collection(db, "events"), orderBy("timestamp", "desc")));
+  return querySnapshot.docs.map(mapDocToEvent);
+};
+
+export const addEvent = async (
+  db: Firestore, // Accept db as argument
+  event: Omit<ReportEvent, 'id'>
+): Promise<ReportEvent> => {
+  const newEventData = {
+    ...event,
+    timestamp: new Date().toISOString(), // Ensure timestamp is set on creation
+    createdAt: new Date().toISOString(),
+  };
+  const docRef = await addDoc(collection(db, "events"), newEventData);
+  return { id: docRef.id, ...newEventData } as ReportEvent;
+};
+
+// --- Cloud Functions for AI/External API Interactions ---
+// These functions will call your Firebase Cloud Functions HTTP endpoints.
+// You MUST implement these Cloud Functions on your Firebase project.
+
+const handleCloudFunctionError = (err: any, functionName: string): Error => {
+  console.error(`Cloud Function ${functionName} error:`, err);
+  if (err.response && err.response.data && err.response.data.error) {
+    return new Error(`Cloud Function ${functionName} failed: ${err.response.data.error.message}`);
+  }
+  return new Error(`Failed to call Cloud Function ${functionName}: ${err.message || 'Unknown error'}`);
+};
+
+export const testGeminiConnectivity = async (prompt: string): Promise<string> => {
+  try {
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/testGeminiConnectivity`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // 'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`, // Example for authenticated calls
+      },
+      body: JSON.stringify({ prompt }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Cloud Function error');
+    }
+    return data.response;
+  } catch (err: any) {
+    throw handleCloudFunctionError(err, 'testGeminiConnectivity');
+  }
+};
+
+// Fix: Changed return type from Analytic[] to VideoAnalysisResult[]
+export const analyzeVideoFile = async (file: File): Promise<VideoAnalysisResult[]> => {
+  try {
+    const formData = new FormData();
+    formData.append('video', file);
+
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/analyzeVideoFile`, {
+      method: 'POST',
+      // 'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`, // Example for authenticated calls
+      body: formData, // Content-Type will be handled by browser for FormData
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Cloud Function error');
+    }
+    return data.results; // Expecting an array of VideoAnalysisResult from your CF
+  } catch (err: any) {
+    throw handleCloudFunctionError(err, 'analyzeVideoFile');
+  }
+};
+
+export const analyzeLiveFrame = async (cameraId: string, base64Image: string, analyticsToApply: string[]): Promise<string> => {
+  try {
+    const response = await fetch(`${CLOUD_FUNCTION_BASE_URL}/analyzeLiveFrame`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // 'Authorization': `Bearer ${await auth.currentUser?.getIdToken()}`, // Example for authenticated calls
+      },
+      body: JSON.stringify({ cameraId, base64Image, analyticsToApply }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Cloud Function error');
+    }
+    return data.description;
+  } catch (err: any) {
+    throw handleCloudFunctionError(err, 'analyzeLiveFrame');
+  }
+};
+
+
+// --- Initial Data Population (Run ONLY ONCE for a new Firebase project) ---
+// You would remove this in a production app after initial setup.
+export const populateInitialData = async (db: Firestore) => { // Accept db as argument
+  // Check if collections are empty before populating
+  const camerasCollection = await getDocs(collection(db, "cameras"));
+  const analyticsCollection = await getDocs(collection(db, "analytics"));
+  const eventsCollection = await getDocs(collection(db, "events"));
+
+  if (camerasCollection.empty) {
+    console.log("Populating initial cameras...");
+    await Promise.all([
+      addDoc(collection(db, "cameras"), { name: 'Main Entrance', location: 'Lobby', ipAddress: '192.168.1.101', status: 'Online', videoUrl: '/videos/cam1.mp4', analyticIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+      addDoc(collection(db, "cameras"), { name: 'Warehouse Aisle 3', location: 'Warehouse', ipAddress: '192.168.1.102', status: 'Recording', videoUrl: '/videos/cam2.mp4', analyticIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+      addDoc(collection(db, "cameras"), { name: 'Loading Dock', location: 'Exterior', ipAddress: '192.168.1.103', status: 'Offline', videoUrl: '/videos/cam3.mp4', analyticIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+      addDoc(collection(db, "cameras"), { name: 'Server Room', location: 'Data Center', ipAddress: '192.168.1.104', status: 'Online', videoUrl: '/videos/cam4.mp4', analyticIds: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }),
+    ]);
+  }
+
+  if (analyticsCollection.empty) {
+    console.log("Populating initial analytics...");
+    await Promise.all([
+      addDoc(collection(db, "analytics"), { name: 'Facial Recognition', description: 'Identifies known individuals and detects unknown faces.', version: '1.2.0', iconName: 'FaceRecognitionIcon', tags: ['Security', 'Access Control'] }),
+      addDoc(collection(db, "analytics"), { name: 'License Plate Recognition (LPR)', description: 'Reads and logs vehicle license plates for vehicle tracking.', version: '2.0.1', iconName: 'LPROIcon', tags: ['Traffic', 'Parking'] }),
+      addDoc(collection(db, "analytics"), { name: 'Object Detection & Tracking', description: 'Detects and tracks specific objects within the video feed.', version: '1.5.3', iconName: 'ObjectDetectionIcon', tags: ['Inventory', 'Safety'] }),
+      addDoc(collection(db, "analytics"), { name: 'Behavioral Anomaly Detection', description: 'Flags unusual activities or deviations from normal patterns.', version: '1.0.0', iconName: 'AnomalyDetectionIcon', tags: ['Security', 'Compliance'] }),
+      addDoc(collection(db, "analytics"), { name: 'Fire & Smoke Detection', description: 'Detects presence of fire or smoke for early warning.', version: '1.1.0', iconName: 'DefaultAnalyticIcon', tags: ['Safety', 'Emergency'] }),
+      addDoc(collection(db, "analytics"), { name: 'Intrusion Detection', description: 'Alerts on unauthorized entry into defined zones.', version: '1.0.5', iconName: 'DefaultAnalyticIcon', tags: ['Security', 'Perimeter'] }),
+    ]);
+  }
+
+  if (eventsCollection.empty) {
+    console.log("Populating initial events...");
+    await Promise.all([
+      addDoc(collection(db, "events"), { timestamp: new Date(Date.now() - 3600000).toISOString(), cameraName: 'Main Entrance', analyticName: 'Facial Recognition', severity: 'High', videoUrl: '/videos/event1.mp4', details: 'Unknown person detected entering restricted area.' }),
+      addDoc(collection(db, "events"), { timestamp: new Date(Date.now() - 7200000).toISOString(), cameraName: 'Warehouse Aisle 3', analyticName: 'Object Detection & Tracking', severity: 'Low', videoUrl: '/videos/event2.mp4', details: 'Pallet moved to incorrect location.' }),
+      addDoc(collection(db, "events"), { timestamp: new Date(Date.now() - 10800000).toISOString(), cameraName: 'Loading Dock', analyticName: 'License Plate Recognition (LPR)', severity: 'Medium', videoUrl: '/videos/event3.mp4', details: 'Vehicle without registered plate detected.' }),
+      addDoc(collection(db, "events"), { timestamp: new Date(Date.now() - 14400000).toISOString(), cameraName: 'Server Room', analyticName: 'Behavioral Anomaly Detection', severity: 'Critical', videoUrl: '/videos/event4.mp4', details: 'Unusual activity detected after hours.' }),
+    ]);
+  }
 };
